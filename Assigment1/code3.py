@@ -1,7 +1,6 @@
 import pickle
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from sklearn.base import clone
 import numpy as np
@@ -25,10 +24,11 @@ X_train_scaled = scaler.fit_transform(X_train_full)
 X_test_scaled = scaler.transform(X_test)
 
 #Dump pipeline
-pickle.dump(scaler, open('pipeline2.pkl', 'wb'))
+pickle.dump(scaler, open('pipeline3.pkl', 'wb'))
 
 # Fit model
-model = LinearRegression()
+from sklearn.linear_model import ElasticNet
+model = ElasticNet(alpha = 0.1, l1_ratio = 0.1)
 model.fit(X_train_scaled, y_train_full)
 y_pred = model.predict(X_test_scaled)
 print("mean_squared_error: ",mean_squared_error(y_test, y_pred))
