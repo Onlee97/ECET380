@@ -34,4 +34,4 @@ y_pred = model.predict(X_test_scaled)
 print("mean_squared_error: ",mean_squared_error(y_test, y_pred))
 
 #Dump model
-pickle.dump(model, open('model2.pkl', 'wb'))
+pickle.dump(model, open('model3.pkl', 'wb'))
