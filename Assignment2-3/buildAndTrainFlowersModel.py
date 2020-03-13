@@ -6,14 +6,50 @@ import tensorflow.compat.v2 as tf
 import tensorflow_datasets as tfds
 from tensorflow import keras
 from preprocessDefinition import preprocess
+from functools import partial
 
-model=tf.keras.models.load_model('flowersModel.h5')
-evalset,info = tfds.load(name='oxford_flowers102', split='test',as_supervised=True,with_info=True)
-evalPipe=evalset.map(preprocess,num_parallel_calls=16).batch(128).prefetch(1)
+dataset, info = tfds.load("oxford_flowers102", as_supervised=True, with_info=True)
+dataset_size = info.splits["train"].num_examples
+class_names = info.features["label"].names
+n_classes = info.features["label"].num_classes
 
-for feats,lab in evalPipe.unbatch().batch(6000).take(1):
-	probPreds=trainedModel1.predict(feats)
+valid_set = tfds.load('oxford_flowers102', split='validation',as_supervised=True) # 10% to 25%
+train_set = tfds.load('oxford_flowers102', split='train',as_supervised=True) #last 75% of train data
 
-top1err=tf.reduce_mean(keras.metrics.sparse_top_k_categorical_accuracy(lab,probPreds,k=1))
-top5err=tf.reduce_mean(keras.metrics.sparse_top_k_categorical_accuracy(lab,probPreds,k=5))
-top10err=tf.reduce_mean(keras.metrics.sparse_top_k_categorical_accuracy(lab,probPreds,k=10))
+batch_size = 32
+train_set = train_set.shuffle(1000).repeat()
+train_set = train_set.map(partial(preprocess, randomize=True)).batch(batch_size).prefetch(1)
+valid_set = valid_set.map(preprocess).batch(batch_size).prefetch(1)
+
+base_model = keras.applications.xception.Xception(weights="imagenet", include_top=False)
+avg = keras.layers.GlobalAveragePooling2D()(base_model.output)
+output = keras.layers.Dense(n_classes, activation="softmax")(avg)
+model = keras.Model(inputs=base_model.input, outputs=output)
+
+for layer in base_model.layers:
+    layer.trainable = False
+optimizer = keras.optimizers.SGD(lr=0.2, momentum=0.9, decay=0.01)
+model.compile(loss="sparse_categorical_crossentropy", optimizer=optimizer,
+              metrics=["accuracy"])
+history = model.fit(train_set,
+                    steps_per_epoch=int(0.75 * dataset_size / batch_size),
+                    validation_data=valid_set,
+                    validation_steps=int(0.15 * dataset_size / batch_size),
+                    epochs=5,
+                    )
+
+for layer in base_model.layers:
+    layer.trainable = True
+optimizer = keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, nesterov=True, decay=0.001)
+model.compile(loss="sparse_categorical_crossentropy", optimizer=optimizer,
+              metrics=["accuracy"])
+checkpoint_cb = keras.callbacks.ModelCheckpoint("flowersModel.h5", save_best_only=True)
+early_stopping_cb = keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
+history = model.fit(train_set,
+                    steps_per_epoch=int(0.75 * dataset_size / batch_size),
+                    validation_data=valid_set,
+                    validation_steps=int(0.15 * dataset_size / batch_size),
+                    epochs=40,
+                    callbacks=[early_stopping_cb, checkpoint_cb]
+                    )
+
