@@ -26,13 +26,17 @@ def run_and_plot(messages_):
 
 def preprocess(data_point):
 	X_batch = data_point['text']
-	y_batch = data_point['title']
 	X_batch = tf.strings.substr(X_batch, 0, 300)
 	X_batch = tf.strings.regex_replace(X_batch, b"<br\\s*/?>", b" ")
 	X_batch = tf.strings.regex_replace(X_batch, b"[^a-zA-Z']", b" ")
 	X_batch = tf.strings.split(X_batch)
-	return X_batch.to_tensor(default_value=b"<pad>"), y_batch
 
+	y_batch = data_point['title']
+	y_batch = tf.strings.regex_replace(y_batch, b"<br\\s*/?>", b" ")
+	y_batch = tf.strings.regex_replace(y_batch, b"[^a-zA-Z']", b" ")
+	y_batch = tf.strings.split(y_batch)
+	return X_batch.to_tensor(default_value=b"<pad>"), y_batch.to_tensor(default_value=b"<pad>")
+	
 if __name__ == "__main__":
 	module_url = "https://tfhub.dev/google/universal-sentence-encoder/4"
 	model = hub.load(module_url)

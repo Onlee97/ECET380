@@ -37,19 +37,6 @@ def loadWikiDataset():
 
 	return train_set, valid_set
 
-def preprocess(data_point):
-	X_batch = data_point['text']
-	X_batch = tf.strings.substr(X_batch, 0, 300)
-	X_batch = tf.strings.regex_replace(X_batch, b"<br\\s*/?>", b" ")
-	X_batch = tf.strings.regex_replace(X_batch, b"[^a-zA-Z']", b" ")
-	X_batch = tf.strings.split(X_batch)
-
-	y_batch = data_point['title']
-	y_batch = tf.strings.regex_replace(y_batch, b"<br\\s*/?>", b" ")
-	y_batch = tf.strings.regex_replace(y_batch, b"[^a-zA-Z']", b" ")
-	y_batch = tf.strings.split(y_batch)
-	return X_batch.to_tensor(default_value=b"<pad>"), y_batch.to_tensor(default_value=b"<pad>")
-
 
 rawTextData = list()
 rawTitleData = list()
@@ -80,10 +67,10 @@ data_ge = ge_tokenizer.texts_to_sequences(raw_data_ge)
 data_ge = tf.keras.preprocessing.sequence.pad_sequences(data_ge,padding='post')
 
 
-# print("Tokenized Text: ", data_en[1])
-# print("Raw text: ", raw_data_en[1])
-# print("Tokenized title: ", data_ge[1])
-# print("Raw title: ",raw_data_ge[1])
+print("Tokenized Text: ", data_en[1])
+print("Raw text: ", raw_data_en[1])
+print("Tokenized title: ", data_ge[1])
+print("Raw title: ",raw_data_ge[1])
 
 def max_len(tensor):
 	#print( np.argmax([len(t) for t in tensor]))
@@ -217,6 +204,9 @@ def train_step(input_batch, output_batch,encoder_initial_cell_state):
 def initialize_initial_state():
 		return [tf.zeros((BATCH_SIZE, rnn_units)), tf.zeros((BATCH_SIZE, rnn_units))]
 
+
+
+
 epochs = 5
 for i in range(1, epochs+1):
 
@@ -228,7 +218,10 @@ for i in range(1, epochs+1):
 		total_loss += batch_loss
 		if (batch+1)%5 == 0:
 			print("total loss: {} epoch {} batch {} ".format(batch_loss.numpy(), i, batch+1))
-
+tf.saved_model.save(encoderNetwork, './')
+tf.saved_model.save(decoderNetwork, './')
+encoderNetwork.save_weights("encoder.h5")
+decoderNetwork.save_weights("decoder.h5")
 
 #In this section we evaluate our model on a raw_input converted to german, for this the entire sentence has to be passed
 #through the length of the model, for this we use greedsampler to run through the decoder
