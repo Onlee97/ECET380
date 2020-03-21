@@ -218,32 +218,42 @@ def show_episode():
 #Creating Dataset 
 #==================
 dataset = replay_buffer.as_dataset(
-    sample_batch_size=64,
-    num_steps=2,
-    num_parallel_calls=3).prefetch(3)
+	sample_batch_size=64,
+	num_steps=2,
+	num_parallel_calls=3).prefetch(3)
 
 from tf_agents.utils.common import function
 collect_driver.run = function(collect_driver.run)
 agent.train = function(agent.train)
 
+
+#==================
+#Creating Checkpoint
+#==================
+checkpoint_dir = './lastModelCheckpoint'
+checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+checkpoint = tf.train.Checkpoint(agent = agent)
+
 #==================
 #Training Loop 
 #==================
 def train_agent(n_iterations):
-    time_step = None
-    policy_state = agent.collect_policy.get_initial_state(tf_env.batch_size)
-    iterator = iter(dataset)
-    for iteration in range(n_iterations):
-        time_step, policy_state = collect_driver.run(time_step, policy_state)
-        trajectories, buffer_info = next(iterator)
-        train_loss = agent.train(trajectories)
-        print("\r{} loss:{:.5f}".format(
-            iteration, train_loss.loss.numpy()), end="")
-        if iteration % 1000 == 0:
-            log_metrics(train_metrics)
+	time_step = None
+	policy_state = agent.collect_policy.get_initial_state(tf_env.batch_size)
+	iterator = iter(dataset)
+	for iteration in range(n_iterations):
+		time_step, policy_state = collect_driver.run(time_step, policy_state)
+		trajectories, buffer_info = next(iterator)
+		train_loss = agent.train(trajectories)
+		print("\r{} loss:{:.5f}".format(
+			iteration, train_loss.loss.numpy()), end="")
+		if iteration % 1000 == 0:
+			log_metrics(train_metrics)
+			checkpoint.save(file_prefix = checkpoint_prefix) #Checkpoint save 
+			print("Checkpoint saved")
 
-# train_agent(n_iterations=10000)
-train_agent(n_iterations=100)
+train_agent(n_iterations=10000)
+# train_agent(n_iterations=1000)
 
 #==================
 #Save Policy
@@ -253,28 +263,29 @@ policy = agent.policy
 saver = PolicySaver(policy, batch_size=None)
 saver.save("savedPolicy")
 
+
 #==================
 #Test run  
 #==================
 frames = []
 def save_frames(trajectory):
-    global frames
-    frames.append(tf_env.pyenv.envs[0].render(mode="rgb_array"))
+	global frames
+	frames.append(tf_env.pyenv.envs[0].render(mode="rgb_array"))
 
 prev_lives = tf_env.pyenv.envs[0].ale.lives()
 def reset_and_fire_on_life_lost(trajectory):
-    global prev_lives
-    lives = tf_env.pyenv.envs[0].ale.lives()
-    if prev_lives != lives:
-        tf_env.reset()
-        tf_env.pyenv.envs[0].step(1)
-        prev_lives = lives
+	global prev_lives
+	lives = tf_env.pyenv.envs[0].ale.lives()
+	if prev_lives != lives:
+		tf_env.reset()
+		tf_env.pyenv.envs[0].step(1)
+		prev_lives = lives
 
 watch_driver = DynamicStepDriver(
-    tf_env,
-    agent.policy,
-    observers=[save_frames, reset_and_fire_on_life_lost, ShowProgress(1000)],
-    num_steps=1000)
+	tf_env,
+	agent.policy,
+	observers=[save_frames, reset_and_fire_on_life_lost, ShowProgress(1000)],
+	num_steps=1000)
 final_time_step, final_policy_state = watch_driver.run()
 plot_animation(frames)
 
@@ -282,7 +293,7 @@ import PIL
 image_path = os.path.join("images", "rl", "assault.gif")
 frame_images = [PIL.Image.fromarray(frame) for frame in frames[:150]]
 frame_images[0].save(image_path, format='GIF',
-                     append_images=frame_images[1:],
-                     save_all=True,
-                     duration=30,
-                     loop=0)
+					 append_images=frame_images[1:],
+					 save_all=True,
+					 duration=30,
+					 loop=0)
