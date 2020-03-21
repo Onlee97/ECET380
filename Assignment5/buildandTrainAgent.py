@@ -45,7 +45,6 @@ def plot_animation(frames, repeat=False, interval=40):
 	plt.close()
 	return anim
 
-
 def plot_observation(obs):
 	# Since there are only 3 color channels, you cannot display 4 frames
 	# with one primary color per frame. So this code computes the delta between
@@ -60,6 +59,15 @@ def plot_observation(obs):
 	plt.imshow(img)
 	plt.axis("off")
 
+class ShowProgress:
+	def __init__(self, total):
+		self.counter = 0
+		self.total = total
+	def __call__(self, trajectory):
+		if not trajectory.is_boundary():
+			self.counter += 1
+		if self.counter % 100 == 0:
+			print("\r{}/{}".format(self.counter, self.total), end="")
 #==================
 #Initialize env
 #==================
@@ -88,7 +96,7 @@ def show_env(env):
 	save_fig("breakout_plot")
 	plt.show()
 
-show_env(env)
+# show_env(env)
 
 #==================
 #Creating DQN 
@@ -148,15 +156,7 @@ replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
 
 replay_buffer_observer = replay_buffer.add_batch
 
-class ShowProgress:
-	def __init__(self, total):
-		self.counter = 0
-		self.total = total
-	def __call__(self, trajectory):
-		if not trajectory.is_boundary():
-			self.counter += 1
-		if self.counter % 100 == 0:
-			print("\r{}/{}".format(self.counter, self.total), end="")
+
 #Add trainning Metrics
 from tf_agents.metrics import tf_metrics
 train_metrics = [
@@ -186,11 +186,14 @@ from tf_agents.policies.random_tf_policy import RandomTFPolicy
 
 initial_collect_policy = RandomTFPolicy(tf_env.time_step_spec(),
 										tf_env.action_spec())
+
+num_steps = 100
+# num_steps = 20000
 init_driver = DynamicStepDriver(
 	tf_env,
 	initial_collect_policy,
-	observers=[replay_buffer.add_batch, ShowProgress(20000)],
-	num_steps=20000) # <=> 80,000 ALE frames
+	observers=[replay_buffer.add_batch, ShowProgress(num_steps)],
+	num_steps=num_steps) # <=> 80,000 ALE frames
 final_time_step, final_policy_state = init_driver.run()
 
 #Trajectories
@@ -201,14 +204,15 @@ trajectories, buffer_info = replay_buffer.get_next(
 from tf_agents.trajectories.trajectory import to_transition
 time_steps, action_steps, next_time_steps = to_transition(trajectories)
 
-plt.figure(figsize=(10, 6.8))
-for row in range(2):
-	for col in range(3):
-		plt.subplot(2, 3, row * 3 + col + 1)
-		plot_observation(trajectories.observation[row, col].numpy())
-plt.subplots_adjust(left=0, right=1, bottom=0, top=1, hspace=0, wspace=0.02)
-save_fig("sub_episodes_plot")
-plt.show()
+def show_episode():
+	plt.figure(figsize=(10, 6.8))
+	for row in range(2):
+		for col in range(3):
+			plt.subplot(2, 3, row * 3 + col + 1)
+			plot_observation(trajectories.observation[row, col].numpy())
+	plt.subplots_adjust(left=0, right=1, bottom=0, top=1, hspace=0, wspace=0.02)
+	save_fig("sub_episodes_plot")
+	plt.show()
 
 #==================
 #Creating Dataset 
@@ -225,3 +229,60 @@ agent.train = function(agent.train)
 #==================
 #Training Loop 
 #==================
+def train_agent(n_iterations):
+    time_step = None
+    policy_state = agent.collect_policy.get_initial_state(tf_env.batch_size)
+    iterator = iter(dataset)
+    for iteration in range(n_iterations):
+        time_step, policy_state = collect_driver.run(time_step, policy_state)
+        trajectories, buffer_info = next(iterator)
+        train_loss = agent.train(trajectories)
+        print("\r{} loss:{:.5f}".format(
+            iteration, train_loss.loss.numpy()), end="")
+        if iteration % 1000 == 0:
+            log_metrics(train_metrics)
+
+# train_agent(n_iterations=10000)
+train_agent(n_iterations=100)
+
+#==================
+#Save Policy
+#==================
+from tf_agents.policies.policy_saver import PolicySaver
+policy = agent.policy
+saver = PolicySaver(policy, batch_size=None)
+saver.save("savedPolicy")
+
+#==================
+#Test run  
+#==================
+frames = []
+def save_frames(trajectory):
+    global frames
+    frames.append(tf_env.pyenv.envs[0].render(mode="rgb_array"))
+
+prev_lives = tf_env.pyenv.envs[0].ale.lives()
+def reset_and_fire_on_life_lost(trajectory):
+    global prev_lives
+    lives = tf_env.pyenv.envs[0].ale.lives()
+    if prev_lives != lives:
+        tf_env.reset()
+        tf_env.pyenv.envs[0].step(1)
+        prev_lives = lives
+
+watch_driver = DynamicStepDriver(
+    tf_env,
+    agent.policy,
+    observers=[save_frames, reset_and_fire_on_life_lost, ShowProgress(1000)],
+    num_steps=1000)
+final_time_step, final_policy_state = watch_driver.run()
+plot_animation(frames)
+
+import PIL
+image_path = os.path.join("images", "rl", "assault.gif")
+frame_images = [PIL.Image.fromarray(frame) for frame in frames[:150]]
+frame_images[0].save(image_path, format='GIF',
+                     append_images=frame_images[1:],
+                     save_all=True,
+                     duration=30,
+                     loop=0)
